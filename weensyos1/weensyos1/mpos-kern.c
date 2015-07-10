@@ -206,6 +206,13 @@ interrupt(registers_t *reg)
 	case INT_SYS_NEWTHREAD:
 		current->p_registers.reg_eax = do_newthread(current, current->p_registers.reg_ebx);
 		run(current);
+	
+	case INT_SYS_KILL:
+		current = &(proc_array[current->p_registers.reg_ebx]);
+		current->p_state = P_EMPTY;
+		current->p_exit_status = current->p_registers.reg_eax;
+		// Kills the process given in the system call
+		schedule();
 
 	default:
 		while (1)

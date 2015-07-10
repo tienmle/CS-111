@@ -30,7 +30,18 @@ sys_newthread(void (*start_function)(void)){
 
 }
 
+//sys_kill
+static inline int
+sys_kill(pid_t pid){
+	int result;
+	asm volatile("int %1\n"
+				: "=a"(result)
+				: "i" (INT_SYS_KILL),
+				  "b" (pid)
+				: "cc", "memory");
+	return result;
 
+}
 /*****************************************************************************
  * sys_getpid
  *

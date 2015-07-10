@@ -25,7 +25,7 @@ be set to P_BLOCKED and process A will have a variable containing Process B's
 PID. 
 
 Once process B exits in INT_SYS_EXIT, process B will remove the block on
-A and then return the exit status in Process B's eax.
+A and then place the exit status in Process B's eax.
 
 
 Response to Exercise 4:
@@ -44,11 +44,15 @@ Exercise 5:
 
 void start(void){
         int x = 0;
-
+	
+	//Volatile int pointer
         int * volatile ptrA = &x;
 
         pid_t p = sys_fork();
         if(p == 0){
+		//In a system with process isolation, this assignment would
+		//cause the child process to point at it's own x, not the
+		//parent's x
                 ptrA = &x;
                 *ptrA = 1;
 
@@ -56,7 +60,7 @@ void start(void){
         }else if (p>0){
                 sys_wait(p);
         }
-        app_printf("%d", x);
+        app_printf("%d", x); //Expect 11 when executed
         sys_exit(0);
 }
 
@@ -66,8 +70,40 @@ Exercise 6:
 
 Exercise 6 is implemented in the following functions:
 
-do_newthread in mpos-kern.c
-INT_SYS_NEWTHREAD in mpos-kern.c
-sys_newthread() in mpos-app.h
+do_newthread in mpos-kern.c      (line 336)
+INT_SYS_NEWTHREAD in mpos-kern.c (line 182)
+sys_newthread() in mpos-app.h    (line 22)
+
+
+sys_newthread() is the system call that causes a software interrupt with
+interrupt number INT_SYS_NEWTHREAD. It passes start_function in register ebx.
+
+When the interrupt is called, the interrupt calls do_newthread which will
+return the process ID of the child.
+
+do_newthread will search for an available pid between the range of 1 and
+NPROCS. Upon finding an available process with state P_EMPTY, the function
+will setup a new process and copy over the registers and assign the
+instruction pointer eip to startFunction. It will set the process state to
+P_RUNNABLE and return 0 in eax.
 
 Exercise 7:
+
+Compared to exercise 6, exercise 7 is straightforward. There are 3 code
+snippers of note that had to be written to create functionality for killing
+processes.
+
+sys_kill(pid_t pid) in mpos-app.h (line 34)
+INT_SYS_KILL in mpos-kern.c       (line 210)
+run_child() in mpos-app2.c        (line 68)
+
+sys_kill() is the system call that sends the process ID to the interrupt
+handler.
+
+INT_SYS_KILL switches the current process to the process that is about to be
+killed. It then sets the state to P_EMPTY and sets the exit status.
+
+In run_child(), if the process is even (modulo 2), it kills the next highest
+process, thus when we run mpos-app2 we will see only even processses displayed
+on the screen.
+
