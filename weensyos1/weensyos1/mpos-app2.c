@@ -52,6 +52,7 @@ start(void)
 	sys_exit(0);
 }
 
+
 void
 run_child(void)
 {

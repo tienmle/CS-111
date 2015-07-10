@@ -126,7 +126,7 @@ start(void)
  *****************************************************************************/
 
 static pid_t do_fork(process_t *parent);
-
+static pid_t do_newthread (process_t* process, int startFunction);
 void
 interrupt(registers_t *reg)
 {
@@ -202,6 +202,10 @@ interrupt(registers_t *reg)
 		}	
 		schedule();
 	}
+
+	case INT_SYS_NEWTHREAD:
+		current->p_registers.reg_eax = do_newthread(current, current->p_registers.reg_ebx);
+		run(current);
 
 	default:
 		while (1)
@@ -329,7 +333,30 @@ copy_stack(process_t *dest, process_t *src)
 	return;
 }
 
+pid_t
+do_newthread(process_t* parentProcess, int startFunction){
+	pid_t pid = 1;
+	process_t* proc;
+	while(pid < NPROCS){
+		proc = &proc_array[pid];
+		
+		if(proc->p_state == P_EMPTY){
+		
+		proc->p_registers = parentProcess->p_registers;
+		proc->p_registers.reg_eip = startFunction;
 
+		proc->p_state == P_RUNNABLE;
+		proc->p_registers.reg_eax = 0;
+		
+		return pid;
+		}
+
+		pid++;
+	}
+
+	return -1; //Did not find available process to create a new thread
+
+}
 
 /*****************************************************************************
  * schedule

@@ -55,8 +55,8 @@ app_printf(const char *format, ...)
   20003e:	c3                   	ret    
 
 0020003f <run_child>:
-	sys_exit(0);
 }
+
 
 void
 run_child(void)

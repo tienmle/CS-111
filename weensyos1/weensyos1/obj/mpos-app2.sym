@@ -11,7 +11,7 @@
 002001bb t fill_numbuf
 002001e8 T console_vprintf
 0020058d T console_printf
-002005c8 r col.881
+002005c8 r col.887
 002005d0 r flag_chars
 002005d8 r upper_digits
 002005ec r lower_digits

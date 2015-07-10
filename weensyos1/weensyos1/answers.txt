@@ -39,3 +39,35 @@ Anything else you'd like us to know:
 
 
 Extra credit exercises:
+
+Exercise 5:
+
+void start(void){
+        int x = 0;
+
+        int * volatile ptrA = &x;
+
+        pid_t p = sys_fork();
+        if(p == 0){
+                ptrA = &x;
+                *ptrA = 1;
+
+                x = 1;
+        }else if (p>0){
+                sys_wait(p);
+        }
+        app_printf("%d", x);
+        sys_exit(0);
+}
+
+
+
+Exercise 6:
+
+Exercise 6 is implemented in the following functions:
+
+do_newthread in mpos-kern.c
+INT_SYS_NEWTHREAD in mpos-kern.c
+sys_newthread() in mpos-app.h
+
+Exercise 7:
