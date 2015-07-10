@@ -1,12 +1,38 @@
-Name:
-UCLA ID:
+Name: Tien Le
+UCLA ID: 604180315
 
 
 -------------------------------------------------------------------------------
 
 Response to Exercise 1:
 
+Yes. The sys_getpid() call will return the correct value since the pid value
+has been saved to the eax register. When schedule() runs and calls a different
+process, context switching causes the data in the registers to be saved to
+memory. When the system returns to this process later on, this data will be
+restored to the registers and eax will contain the correct value.
 
+Response to Exercise 2:
+
+do_fork() and copy_stack() are implemented in mpos-kern.c
+
+Response to Exercise 3:
+
+Implementation of INT_SYS_WAIT and INT_SYS_EXIT is changed in mpos-kern.c to
+use blocking instead of polling. If sys_wait is called on process 'A' by
+process 'B'  and process 'A' is not ready to exit yet, process B's state will
+be set to P_BLOCKED and process A will have a variable containing Process B's
+PID. 
+
+Once process B exits in INT_SYS_EXIT, process B will remove the block on
+A and then return the exit status in Process B's eax.
+
+
+Response to Exercise 4:
+
+In INT_SYS_EXIT, the process sets the state to P_ZOMBIE when the state should
+be P_EMPTY since the process is exiting. Changing this line fixes the problem
+and the program runs correctly.
 
 Anything else you'd like us to know:
 
