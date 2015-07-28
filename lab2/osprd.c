@@ -34,7 +34,7 @@
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("CS 111 RAM Disk");
 // EXERCISE: Pass your names into the kernel as the module's authors.
-MODULE_AUTHOR("Skeletor");
+MODULE_AUTHOR("Tien Le and David Nguyen");
 
 #define OSPRD_MAJOR	222
 
@@ -119,9 +119,20 @@ static void osprd_process_request(osprd_info_t *d, struct request *req)
 	// Read about 'struct request' in <linux/blkdev.h>.
 	// Consider the 'req->sector', 'req->current_nr_sectors', and
 	// 'req->buffer' members, and the rq_data_dir() function.
-
+	
 	// Your code here.
-	eprintk("Should process request...\n");
+	// 
+	// rq_data_dir
+	// #define rq_data_dir(rq)         ((rq)->flags & 1)
+	unsigned int sec = req->sector * SECTOR_SIZE;
+	unsigned int size = req->current_nr_sectors * SECTOR_SIZE;	
+
+	if(rq_data_dir(req) == READ){
+		memcpy(req->buffer, d->data + sec, size);
+	} else if(rq_data_dir(req) == WRITE){
+		memcpy(d->data + sec, req->buffer, size);
+	}
+
 
 	end_request(req, 1);
 }
