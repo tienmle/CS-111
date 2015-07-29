@@ -164,7 +164,7 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 
 		// Your code here.
 
-        if (*d == NULL || (filp->f_flags & F_OSPRD_LOCKED) == 0 ) //If the file is not an OSP ramdisk or if there are no locks for the disk
+        if (d == NULL || (filp->f_flags & F_OSPRD_LOCKED) == 0 ) //If the file is not an OSP ramdisk or if there are no locks for the disk
             return -1;
         osp_spin_lock(&(d->mutex));
         filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
