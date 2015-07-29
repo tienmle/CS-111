@@ -168,12 +168,12 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
             return -1;
         osp_spin_lock(&(d->mutex));
         filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
-        //update ticket head and ticket queue
         osp_spin_unlock(&(d->mutex));
         wake_up_all(&(d->blockq));
+        return 0;
 	}
 
-	return 0;
+	return -1;
 }
 
 
