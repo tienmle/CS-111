@@ -164,9 +164,13 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 
 		// Your code here.
 
-		// This line avoids compiler warnings; you may remove it.
-		(void) filp_writable, (void) d;
-
+        if (*d == NULL || (filp->f_flags & F_OSPRD_LOCKED) == 0 ) //If the file is not an OSP ramdisk or if there are no locks for the disk
+            return -1;
+        osp_spin_lock(&(d->mutex));
+        filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
+        //update ticket head and ticket queue
+        osp_spin_unlock(&(d->mutex));
+        wake_up_all(&(d->blockq));
 	}
 
 	return 0;
