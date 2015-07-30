@@ -226,6 +226,28 @@ static int acquire_lock(stuct file* filp){
 	osp_spin_unlock(&d->mutex);
 	return 0;
 }
+
+static int try_acquire_lock(struct file* filp){
+	osprd_info_t *d = file2osprd(filp); // Device info
+    if (d == NULL)
+        return -1;
+	int filp_writable = (filp->f->mode & FMODE_WRITE);
+
+	//Basic check if file already has a lock
+	if(filp->f_flags & F_OSPRD_LOCKED)
+		return -EDEADLK;
+    
+	osp_spin_lock(&d->mutex);
+	
+	if(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
+	{
+		// Give up spinlock before returning
+		osp_spin_unlock(&d->mutex);
+		return -EBUSY; // Try again later
+	}
+    return 0;   //Return 0 if the lock can be acquired
+    //NOT FINISHED HERE
+}
 /*
  * End new code
 */
@@ -309,8 +331,6 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// Otherwise, if we can grant the lock request, return 0.
 
 		// Your code here (instead of the next two lines).
-		eprintk("Attempting to try acquire\n");
-		r = -ENOTTY;
 
 	} else if (cmd == OSPRDIOCRELEASE) {
 
