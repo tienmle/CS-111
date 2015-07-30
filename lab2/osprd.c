@@ -64,6 +64,9 @@ typedef struct osprd_info {
 
 	/* HINT: You may want to add additional fields to help
 	         in detecting deadlock. */
+	
+	unsigned count_rlocks;	// Count of the number of active read locks
+	unsigned count_wlocks;	// Count of the number of active write locks
 
 	// The following elements are used internally; you don't need
 	// to understand them.
@@ -182,6 +185,51 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
  */
 
 /*
+ * New code here
+*/
+
+//Attempts to acquire a lock
+//	Function will return 0, -EDEADLK, or -EBUSY depending on conditions
+static int acquire_lock(stuct file* filp){
+	osprd_info_t *d = file2osprd(filp); // Device info
+	int filp_writable = (filp->f->mode & FMODE_WRITE);
+
+	//Basic check if file already has a lock
+	if(filp->f_flags & F_OSPRD_LOCKED)
+		return -EDEADLK;
+	
+	
+	//Check for two conditions
+	// 1) There are any write locks
+	// 2) We are attempting to acquire a write lock and there are read locks
+	osp_spin_lock(&d->mutex);
+	
+	if(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
+	{
+		// Give up spinlock before returning
+		osp_spin_unlock(&d->mutex);
+		return -EBUSY; // Try again later
+	}
+
+	// Acquire the lock
+
+	if(filp_writable)
+		d->count_wlocks++;
+	else //We are reading
+		d->count_rlocks++;
+
+	//TODO: Implement a list of lock holding processes to detect deadlock
+	
+	filp->f_flags |= F_OSPRD_LOCKED;
+	osp_spin_unlock(&d->mutex);
+	return 0;
+}
+/*
+ * End new code
+*/
+
+
+/*
  * osprd_ioctl(inode, filp, cmd, arg)
  *   Called to perform an ioctl on the named file.
  */
@@ -192,7 +240,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 	int r = 0;			// return value: initially 0
 
 	// is file open for writing?
-	int filp_writable = (filp->f_mode & FMODE_WRITE) != 0;
+	int filp_writable = (filp->f_mode & FMODE_WRITE);
 
 	// This line avoids compiler warnings; you may remove it.
 	(void) filp_writable, (void) d;
@@ -201,13 +249,13 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 
 	if (cmd == OSPRDIOCACQUIRE) {
 
-		// EXERCISE: Lock the ramdisk.
+		// EXERCISE 4: Lock the ramdisk.
 		//
 		// If *filp is open for writing (filp_writable), then attempt
 		// to write-lock the ramdisk; otherwise attempt to read-lock
 		// the ramdisk.
 		//
-                // This lock request must block using 'd->blockq' until:
+        // This lock request must block using 'd->blockq' until:
 		// 1) no other process holds a write lock;
 		// 2) either the request is for a read lock, or no other process
 		//    holds a read lock; and
@@ -237,8 +285,17 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// be protected by a spinlock; which ones?)
 
 		// Your code here (instead of the next two lines).
-		eprintk("Attempting to acquire\n");
-		r = -ENOTTY;
+
+		unsigned currentTicket;
+		
+		r = 0;
+
+		//Test code to see if a lock will actually be acquired
+		if(acquire_lock(filp) != 0){
+			eprintk("Failed to acquire lock");
+			r = -ENOTTY; 
+		}
+		
 
 	} else if (cmd == OSPRDIOCTRYACQUIRE) {
 
