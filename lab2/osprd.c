@@ -189,9 +189,11 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 */
 
 //Attempts to acquire a lock
-//	Function will return 0, -EDEADLK, or -EBUSY depending on conditions
+//	Function will return 0, -1, -EDEADLK, or -EBUSY depending on conditions
 static int acquire_lock(stuct file* filp){
 	osprd_info_t *d = file2osprd(filp); // Device info
+    if (d == NULL)
+        return -1;
 	int filp_writable = (filp->f->mode & FMODE_WRITE);
 
 	//Basic check if file already has a lock
