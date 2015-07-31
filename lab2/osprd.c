@@ -299,7 +299,6 @@ static int acquire_lock(struct file* filp){
 	// 1) There are any write locks
 	// 2) We are attempting to acquire a write lock and there are read locks
 	osp_spin_lock(&d->mutex);
-	
 	if(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
 	{
 		osp_spin_unlock(&d->mutex);
@@ -307,14 +306,12 @@ static int acquire_lock(struct file* filp){
 	}
 
 	// Acquire the lock
-
 	if(filp_writable)
 		d->count_wlocks++;
 	else //We are reading
 		d->count_rlocks++;
 
 	//TODO: Implement a list of lock holding processes to detect deadlock
-	
 	filp->f_flags |= F_OSPRD_LOCKED;
 	osp_spin_unlock(&d->mutex);
 	return 0;
@@ -417,29 +414,27 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		insertTicket(&ticketQueue, currentTicket);
 		//DEADLOCK DETECTION: Add current process to list of waiting for locks?
 		osp_spin_unlock(&d->mutex);
-
-		while(acquire_lock(filp) != 0){
-			wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket
-				&& !(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
-				);
-
-			if(signal_pending(current)){
-				osp_spin_lock(&d->mutex);
-				//Remove ticket from list of waiting tickets, since this process is restarting	
-				removeTicket(&ticketQueue, current);
-				if(d->ticket_head == currentTicket)
-					passTicketTail(d);
-				osp_spin_unlock(&d->mutex);
-
-				return -ERESTARTSYS;
-			}
-			//Keep cycling until we finally acquire the lock
+		
+		
+		wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket &&
+			!(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
+			);
+		if(signal_pending(current)){
+			osp_spin_lock(&d->mutex);
+			//Remove ticket from list of waiting tickets, since this process is going to restart	
+			removeTicket(&ticketQueue, current);
+			if(d->ticket_tail == currentTicket)
+				passTicketTail(d);
+			osp_spin_unlock(&d->mutex);
+			return -ERESTARTSYS;
 		}
+		acquire_lock(filp);
+		
 		//Succesfully acquired lock, cleanup
 
 		osp_spin_lock(&d->mutex);
 		removeTicket(&ticketQueue, current);
-		passTicketTail(d);
+		//passTicketTail(d); We don't want to give the ticket until the lock is released
 		osp_spin_unlock(&d->mutex);
 
 		//Wake everyone up so they can check if they have the ticket
@@ -488,6 +483,7 @@ static void osprd_setup(osprd_info_t *d)
 	/* Add code here if you add fields to osprd_info_t. */
 	d->count_rlocks = 0;
 	d->count_wlocks = 0;
+	d->ticketQueue = NULL;
 }
 
 
