@@ -67,6 +67,8 @@ typedef struct osprd_info {
 	
 	unsigned count_rlocks;	// Count of the number of active read locks
 	unsigned count_wlocks;	// Count of the number of active write locks
+	
+	ticketNode* ticketQueue; // List of current number of waiting tickets
 
 	// The following elements are used internally; you don't need
 	// to understand them.
@@ -78,6 +80,87 @@ typedef struct osprd_info {
 
 #define NOSPRD 4
 static osprd_info_t osprds[NOSPRD];
+
+/* New struct declarations to help track processes */
+// TICKET LINKED LIST
+// Data structure to keep track of tickets
+struct ticketQueue{
+	unsigned ticket;
+	struct ticketQueue* next;
+};
+
+//Inserts a ticket into the very end of the list. Initializes list of none currently exists
+void insertTicket(ticketQueue** list, unsigned newticket)
+{
+	ticketQueue *to_insert = kzalloc(sizeof(ticketNode), GFP_ATOMIC);
+	to_insert->ticket = newticket;
+	to_insert->next = NULL;
+
+	if (*list == NULL)
+		*list = to_insert;
+	else
+	{
+		ticketQueue* walk = *list;
+		ticketQueue* prev = NULL;
+		while (walk)
+		{
+			prev = walk;
+			walk = walk->next;
+		}
+		prev->next = to_insert;
+	}
+	return;
+}
+
+//Removes a ticket from the list
+//If there is only one ticket in the list, we will deallocate the list and point to NULL
+void removeTicket(ticketQueue** list, unsigned ticket)
+{
+	ticketQueue* current, previous;
+	if(*list == NULL){
+		return;
+	}
+	//If the first node in the list is the desired ticket, deallocate
+	current = *list;
+	if(current->ticket == ticket){
+		*list = (*list)->next;
+		kfree(current);
+		return;
+	}
+
+	while( current->next != NULL){
+		if(current->next->ticket == ticket){
+			current->next = current->next->next;
+			kfree(current->next);
+			return;
+		}
+		current = current->next;
+	}
+	return; // Did not find ticket, returning
+}
+
+//Boolean returns if ticket is in list or not
+static int ticketInQueue(ticketQueue* list, unsigned ticket){
+	ticketQueue* current;
+
+	if(list == NULL)
+		return 0;
+	current = list;
+
+	while(current){
+		if(current->ticket == ticket)
+			return 1;
+		current = current->next;
+	}
+	return 0;
+}
+
+static int queueIsEmpty(ticketQueue* list){
+	if(list == NULL)
+		return 1;
+	return 0;
+}
+
 
 
 // Declare useful helper functions
@@ -187,6 +270,18 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 /*
  * New code here
 */
+
+//Give the ticket to the next ticket in the queue
+//If the queue is empty, then we assume nobody is waiting so reset ticket_tail and head to 0
+//USE THIS FUNCTION WITH A LOCK
+void passTicketTail(osprd_info_t* d){
+	if(queueIsEmpty((*d)->ticketQueue)){
+		d->ticket_head = 0;
+		d->ticket_tail = 0;
+	}
+	else
+		d->ticket_tail = ticketQueue->ticket;
+}
 
 //Attempts to acquire a lock
 //	Function will return 0, -1, -EDEADLK, or -EBUSY depending on conditions
@@ -312,15 +407,42 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 
 		unsigned currentTicket;
 		
-		r = 0;
+		//TODO: Deadlock function implementation here
 
-		//Test code to see if a lock will actually be acquired
-		if(acquire_lock(filp) != 0){
-			eprintk("Failed to acquire lock");
-			r = -ENOTTY; 
+		//Give process a ticket
+		osp_spin_lock(&d->mutex);
+		currentTicket = d->ticket_head;
+		d->ticket_head++;
+		insertTicket(&ticketQueue, currentTicket);
+		//DEADLOCK DETECTION: Add current process to list of waiting for locks?
+		osp_spin_unlock(&d->mutex);
+
+		while(acquire_lock(filp) != 0){
+			wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket);
+
+			//If process got woken up by a signal
+			if(signal_pending(current)){
+				osp_spin_lock(&d->mutex);
+				//Remove ticket from list of waiting tickets, since this process is restarting	
+				removeTicket(&ticketQueue, current);
+				if(d->ticket_head == currentTicket)
+					passTicketTail(d);
+				osp_spin_unlock(&d->mutex);
+
+				return -ERESTARTSYS;
+			}
+			//Keep cycling until we finally acquire the lock
 		}
-		
+		//Succesfully acquired lock, cleanup
 
+		osp_spin_lock(&d->mutex);
+		removeTicket(&ticketQueue, current);
+		passTicketTail(d);
+		osp_spin_unlock(&d->mutex);
+
+		//Wake everyone up so they can check if they have the ticket
+		wake_up_all(&(d->blockq));
+		r = 0;
 	} else if (cmd == OSPRDIOCTRYACQUIRE) {
 
 		// EXERCISE: ATTEMPT to lock the ramdisk.
@@ -331,6 +453,9 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// Otherwise, if we can grant the lock request, return 0.
 
 		// Your code here (instead of the next two lines).
+		r = acquire_lock(filp); 
+		if(r != 0)
+			r = -EBUSY;
 
 	} else if (cmd == OSPRDIOCRELEASE) {
 
