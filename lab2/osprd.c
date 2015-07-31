@@ -285,17 +285,16 @@ void passTicketTail(osprd_info_t* d){
 
 //Attempts to acquire a lock
 //	Function will return 0, -1, -EDEADLK, or -EBUSY depending on conditions
-static int acquire_lock(stuct file* filp){
+static int acquire_lock(struct file* filp){
 	osprd_info_t *d = file2osprd(filp); // Device info
-    if (d == NULL)
-        return -1;
-	int filp_writable = (filp->f->mode & FMODE_WRITE);
+    if(d == NULL)
+		return -1;
+	int filp_writable = (filp->f_mode & FMODE_WRITE);
 
 	//Basic check if file already has a lock
 	if(filp->f_flags & F_OSPRD_LOCKED)
 		return -EDEADLK;
-	
-	
+
 	//Check for two conditions
 	// 1) There are any write locks
 	// 2) We are attempting to acquire a write lock and there are read locks
@@ -303,7 +302,6 @@ static int acquire_lock(stuct file* filp){
 	
 	if(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
 	{
-		// Give up spinlock before returning
 		osp_spin_unlock(&d->mutex);
 		return -EBUSY; // Try again later
 	}
@@ -322,26 +320,29 @@ static int acquire_lock(stuct file* filp){
 	return 0;
 }
 
-static int try_acquire_lock(struct file* filp){
+static int release_lock(struct file* filp){
 	osprd_info_t *d = file2osprd(filp); // Device info
-    if (d == NULL)
-        return -1;
-	int filp_writable = (filp->f->mode & FMODE_WRITE);
-
-	//Basic check if file already has a lock
-	if(filp->f_flags & F_OSPRD_LOCKED)
-		return -EDEADLK;
-    
-	osp_spin_lock(&d->mutex);
+    if(!d)
+		return -1;
 	
-	if(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
-	{
-		// Give up spinlock before returning
-		osp_spin_unlock(&d->mutex);
-		return -EBUSY; // Try again later
-	}
-    return 0;   //Return 0 if the lock can be acquired
-    //NOT FINISHED HERE
+	int filp_writable = filp->f_mode & FMODE_WRITE;
+	int filp_locked   = filp->f_mode & F_OSPRD_LOCKED;
+	
+	if(filp_locked == 0)
+		return -EINVAL;
+	
+	osp_spin_lock(&d->mutex);
+	if(filp_writable)
+		d->count_wlocks--;
+	else
+		d->count_rlocks--;
+
+	passTicketTail(d);
+    filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
+	osp_spin_unlock(&d->mutex);
+	
+	wake_up_all(&d->blockq);
+	return 0;
 }
 /*
  * End new code
@@ -418,9 +419,10 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		osp_spin_unlock(&d->mutex);
 
 		while(acquire_lock(filp) != 0){
-			wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket);
+			wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket
+				&& !(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
+				);
 
-			//If process got woken up by a signal
 			if(signal_pending(current)){
 				osp_spin_lock(&d->mutex);
 				//Remove ticket from list of waiting tickets, since this process is restarting	
@@ -467,7 +469,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// you need, and return 0.
 
 		// Your code here (instead of the next line).
-		r = -ENOTTY;
+		r = release_lock(filp);
 
 	} else
 		r = -ENOTTY; /* unknown command */
