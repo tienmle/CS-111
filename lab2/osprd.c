@@ -334,7 +334,7 @@ static int release_lock(struct file* filp){
 	else
 		d->count_rlocks--;
 
-	passTicketTail(d);
+	//passTicketTail(d);
     filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
 	osp_spin_unlock(&d->mutex);
 	
@@ -428,13 +428,15 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			osp_spin_unlock(&d->mutex);
 			return -ERESTARTSYS;
 		}
-		acquire_lock(filp);
+		r = acquire_lock(filp);
 		
+		if(r != 0)
+			eprintk("Error: Did not acquire file lock even when we should have been able to");
 		//Succesfully acquired lock, cleanup
 
 		osp_spin_lock(&d->mutex);
 		removeTicket(&ticketQueue, current);
-		//passTicketTail(d); We don't want to give the ticket until the lock is released
+		passTicketTail(d);
 		osp_spin_unlock(&d->mutex);
 
 		//Wake everyone up so they can check if they have the ticket
