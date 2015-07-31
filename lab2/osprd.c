@@ -44,6 +44,18 @@ MODULE_AUTHOR("Tien Le and David Nguyen");
 static int nsectors = 32;
 module_param(nsectors, int, 0);
 
+/* New struct declarations to help track processes */
+// TICKET LINKED LIST
+// Data structure to keep track of tickets
+typedef struct ticketQueue{
+	unsigned ticket;
+	struct ticketQueue* next;
+}ticketQueue;
+
+void insertTicket(ticketQueue** list, unsigned newticket);
+void removeTicket(ticketQueue** list, unsigned ticket);
+static int ticketInQueue(struct ticketQueue* list, unsigned ticket);
+static int queueIsEmpty(struct ticketQueue* list);
 
 /* The internal representation of our device. */
 typedef struct osprd_info {
@@ -68,7 +80,7 @@ typedef struct osprd_info {
 	unsigned count_rlocks;	// Count of the number of active read locks
 	unsigned count_wlocks;	// Count of the number of active write locks
 	
-	ticketNode* ticketQueue; // List of current number of waiting tickets
+	struct ticketQueue* ticketQueue; // List of current number of waiting tickets
 
 	// The following elements are used internally; you don't need
 	// to understand them.
@@ -81,18 +93,10 @@ typedef struct osprd_info {
 #define NOSPRD 4
 static osprd_info_t osprds[NOSPRD];
 
-/* New struct declarations to help track processes */
-// TICKET LINKED LIST
-// Data structure to keep track of tickets
-struct ticketQueue{
-	unsigned ticket;
-	struct ticketQueue* next;
-};
-
 //Inserts a ticket into the very end of the list. Initializes list of none currently exists
-void insertTicket(ticketQueue** list, unsigned newticket)
+void insertTicket(struct ticketQueue** list, unsigned newticket)
 {
-	ticketQueue *to_insert = kzalloc(sizeof(ticketNode), GFP_ATOMIC);
+	ticketQueue *to_insert = kzalloc(sizeof(ticketQueue), GFP_ATOMIC);
 	to_insert->ticket = newticket;
 	to_insert->next = NULL;
 
@@ -114,48 +118,49 @@ void insertTicket(ticketQueue** list, unsigned newticket)
 
 //Removes a ticket from the list
 //If there is only one ticket in the list, we will deallocate the list and point to NULL
-void removeTicket(ticketQueue** list, unsigned ticket)
+void removeTicket(struct ticketQueue** list, unsigned ticket)
 {
-	ticketQueue* current, previous;
+	ticketQueue* cur;
+	
 	if(*list == NULL){
 		return;
 	}
 	//If the first node in the list is the desired ticket, deallocate
-	current = *list;
-	if(current->ticket == ticket){
+	cur = *list;
+	if(cur->ticket == ticket){
 		*list = (*list)->next;
-		kfree(current);
+		kfree(cur);
 		return;
 	}
 
-	while( current->next != NULL){
-		if(current->next->ticket == ticket){
-			current->next = current->next->next;
-			kfree(current->next);
+	while( cur->next != NULL){
+		if(cur->next->ticket == ticket){
+			cur->next = cur->next->next;
+			kfree(cur->next);
 			return;
 		}
-		current = current->next;
+		cur = cur->next;
 	}
 	return; // Did not find ticket, returning
 }
 
 //Boolean returns if ticket is in list or not
-static int ticketInQueue(ticketQueue* list, unsigned ticket){
-	ticketQueue* current;
+static int ticketInQueue(struct ticketQueue* list, unsigned ticket){
+	ticketQueue* cur;
 
 	if(list == NULL)
 		return 0;
-	current = list;
+	cur = list;
 
-	while(current){
-		if(current->ticket == ticket)
+	while(cur){
+		if(cur->ticket == ticket)
 			return 1;
-		current = current->next;
+		cur = cur->next;
 	}
 	return 0;
 }
 
-static int queueIsEmpty(ticketQueue* list){
+static int queueIsEmpty(struct ticketQueue* list){
 	if(list == NULL)
 		return 1;
 	return 0;
@@ -193,7 +198,7 @@ static void for_each_open_file(struct task_struct *task,
  */
 static void osprd_process_request(osprd_info_t *d, struct request *req)
 {
-	if (!blk_fs_request(req)) {
+	if(!blk_fs_request(req)) {
 		end_request(req, 0);
 		return;
 	}
@@ -210,8 +215,8 @@ static void osprd_process_request(osprd_info_t *d, struct request *req)
 	// 
 	// rq_data_dir
 	// #define rq_data_dir(rq)         ((rq)->flags & 1)
-	unsigned int sec = req->sector * SECTOR_SIZE;
-	unsigned int size = req->current_nr_sectors * SECTOR_SIZE;	
+	unsigned sec = req->sector * SECTOR_SIZE;
+	unsigned size = req->current_nr_sectors * SECTOR_SIZE;	
 
 	if(rq_data_dir(req) == READ){
 		memcpy(req->buffer, d->data + sec, size);
@@ -254,6 +259,10 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
             return -1;
         osp_spin_lock(&(d->mutex));
         filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
+	if(filp_writable)
+		d->count_wlocks--;
+	else
+		d->count_rlocks--;
         osp_spin_unlock(&(d->mutex));
         wake_up_all(&(d->blockq));
         return 0;
@@ -275,12 +284,12 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 //If the queue is empty, then we assume nobody is waiting so reset ticket_tail and head to 0
 //USE THIS FUNCTION WITH A LOCK
 void passTicketTail(osprd_info_t* d){
-	if(queueIsEmpty((*d)->ticketQueue)){
+	if(queueIsEmpty(d->ticketQueue)){
 		d->ticket_head = 0;
 		d->ticket_tail = 0;
 	}
 	else
-		d->ticket_tail = ticketQueue->ticket;
+		d->ticket_tail = d->ticketQueue->ticket;
 }
 
 //Attempts to acquire a lock
@@ -319,14 +328,16 @@ static int acquire_lock(struct file* filp){
 
 static int release_lock(struct file* filp){
 	osprd_info_t *d = file2osprd(filp); // Device info
-    if(!d)
+	if(d == NULL){
 		return -1;
-	
+	}
+		
 	int filp_writable = filp->f_mode & FMODE_WRITE;
 	int filp_locked   = filp->f_mode & F_OSPRD_LOCKED;
 	
-	if(filp_locked == 0)
+	if(filp_locked == 0){
 		return -EINVAL;
+	}
 	
 	osp_spin_lock(&d->mutex);
 	if(filp_writable)
@@ -335,7 +346,7 @@ static int release_lock(struct file* filp){
 		d->count_rlocks--;
 
 	//passTicketTail(d);
-    filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
+    	filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
 	osp_spin_unlock(&d->mutex);
 	
 	wake_up_all(&d->blockq);
@@ -411,31 +422,27 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		osp_spin_lock(&d->mutex);
 		currentTicket = d->ticket_head;
 		d->ticket_head++;
-		insertTicket(&ticketQueue, currentTicket);
+		insertTicket(&(d->ticketQueue), currentTicket);
 		//DEADLOCK DETECTION: Add current process to list of waiting for locks?
 		osp_spin_unlock(&d->mutex);
-		
-		
 		wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket &&
 			!(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
 			);
 		if(signal_pending(current)){
 			osp_spin_lock(&d->mutex);
 			//Remove ticket from list of waiting tickets, since this process is going to restart	
-			removeTicket(&ticketQueue, current);
+			removeTicket(&(d->ticketQueue), currentTicket);
 			if(d->ticket_tail == currentTicket)
 				passTicketTail(d);
 			osp_spin_unlock(&d->mutex);
 			return -ERESTARTSYS;
 		}
 		r = acquire_lock(filp);
-		
 		if(r != 0)
 			eprintk("Error: Did not acquire file lock even when we should have been able to");
 		//Succesfully acquired lock, cleanup
-
 		osp_spin_lock(&d->mutex);
-		removeTicket(&ticketQueue, current);
+		removeTicket(&(d->ticketQueue), currentTicket);
 		passTicketTail(d);
 		osp_spin_unlock(&d->mutex);
 
