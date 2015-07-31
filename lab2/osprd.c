@@ -359,6 +359,8 @@ static void osprd_setup(osprd_info_t *d)
 	osp_spin_lock_init(&d->mutex);
 	d->ticket_head = d->ticket_tail = 0;
 	/* Add code here if you add fields to osprd_info_t. */
+	d->count_rlocks = 0;
+	d->count_wlocks = 0;
 }
 
 
