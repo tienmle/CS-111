@@ -21,14 +21,14 @@
 #define SECTOR_SIZE	512
 
 /* This flag is added to an OSPRD file's f_flags to indicate that the file
- * is locked. */
+* is locked. */
 #define F_OSPRD_LOCKED	0x80000
 
 /* eprintk() prints messages to the console.
- * (If working on a real Linux machine, change KERN_NOTICE to KERN_ALERT or
- * KERN_EMERG so that you are sure to see the messages.  By default, the
- * kernel does not print all messages to the console.  Levels like KERN_ALERT
- * and KERN_EMERG will make sure that you will see messages.) */
+* (If working on a real Linux machine, change KERN_NOTICE to KERN_ALERT or
+* KERN_EMERG so that you are sure to see the messages.  By default, the
+* kernel does not print all messages to the console.  Levels like KERN_ALERT
+* and KERN_EMERG will make sure that you will see messages.) */
 #define eprintk(format, ...) printk(KERN_NOTICE format, ## __VA_ARGS__)
 
 MODULE_LICENSE("Dual BSD/GPL");
@@ -39,8 +39,8 @@ MODULE_AUTHOR("Tien Le and David Nguyen");
 #define OSPRD_MAJOR	222
 
 /* This module parameter controls how big the disk will be.
- * You can specify module parameters when you load the module,
- * as an argument to insmod: "insmod osprd.ko nsectors=4096" */
+* You can specify module parameters when you load the module,
+* as an argument to insmod: "insmod osprd.ko nsectors=4096" */
 static int nsectors = 32;
 module_param(nsectors, int, 0);
 
@@ -60,33 +60,33 @@ static int queueIsEmpty(struct ticketQueue* list);
 /* The internal representation of our device. */
 typedef struct osprd_info {
 	uint8_t *data;                  // The data array. Its size is
-	                                // (nsectors * SECTOR_SIZE) bytes.
+	// (nsectors * SECTOR_SIZE) bytes.
 
 	osp_spinlock_t mutex;           // Mutex for synchronizing access to
-					// this block device
+	// this block device
 
 	unsigned ticket_head;		// Currently running ticket for
-					// the device lock
+	// the device lock
 
 	unsigned ticket_tail;		// Next available ticket for
-					// the device lock
+	// the device lock
 
 	wait_queue_head_t blockq;       // Wait queue for tasks blocked on
-					// the device lock
+	// the device lock
 
 	/* HINT: You may want to add additional fields to help
-	         in detecting deadlock. */
-	
+	in detecting deadlock. */
+
 	unsigned count_rlocks;	// Count of the number of active read locks
 	unsigned count_wlocks;	// Count of the number of active write locks
-	
+
 	struct ticketQueue* ticketQueue; // List of current number of waiting tickets
 
 	// The following elements are used internally; you don't need
 	// to understand them.
 	struct request_queue *queue;    // The device request queue.
 	spinlock_t qlock;		// Used internally for mutual
-	                                //   exclusion in the 'queue'.
+	//   exclusion in the 'queue'.
 	struct gendisk *gd;             // The generic disk.
 } osprd_info_t;
 
@@ -121,7 +121,7 @@ void insertTicket(struct ticketQueue** list, unsigned newticket)
 void removeTicket(struct ticketQueue** list, unsigned ticket)
 {
 	ticketQueue* cur;
-	
+
 	if(*list == NULL){
 		return;
 	}
@@ -171,31 +171,31 @@ static int queueIsEmpty(struct ticketQueue* list){
 // Declare useful helper functions
 
 /*
- * file2osprd(filp)
- *   Given an open file, check whether that file corresponds to an OSP ramdisk.
- *   If so, return a pointer to the ramdisk's osprd_info_t.
- *   If not, return NULL.
- */
+* file2osprd(filp)
+*   Given an open file, check whether that file corresponds to an OSP ramdisk.
+*   If so, return a pointer to the ramdisk's osprd_info_t.
+*   If not, return NULL.
+*/
 static osprd_info_t *file2osprd(struct file *filp);
 
 /*
- * for_each_open_file(task, callback, user_data)
- *   Given a task, call the function 'callback' once for each of 'task's open
- *   files.  'callback' is called as 'callback(filp, user_data)'; 'filp' is
- *   the open file, and 'user_data' is copied from for_each_open_file's third
- *   argument.
- */
+* for_each_open_file(task, callback, user_data)
+*   Given a task, call the function 'callback' once for each of 'task's open
+*   files.  'callback' is called as 'callback(filp, user_data)'; 'filp' is
+*   the open file, and 'user_data' is copied from for_each_open_file's third
+*   argument.
+*/
 static void for_each_open_file(struct task_struct *task,
-			       void (*callback)(struct file *filp,
-						osprd_info_t *user_data),
-			       osprd_info_t *user_data);
+							   void (*callback)(struct file *filp,
+							   osprd_info_t *user_data),
+							   osprd_info_t *user_data);
 
 
 /*
- * osprd_process_request(d, req)
- *   Called when the user reads or writes a sector.
- *   Should perform the read or write, as appropriate.
- */
+* osprd_process_request(d, req)
+*   Called when the user reads or writes a sector.
+*   Should perform the read or write, as appropriate.
+*/
 static void osprd_process_request(osprd_info_t *d, struct request *req)
 {
 	if(!blk_fs_request(req)) {
@@ -210,7 +210,7 @@ static void osprd_process_request(osprd_info_t *d, struct request *req)
 	// Read about 'struct request' in <linux/blkdev.h>.
 	// Consider the 'req->sector', 'req->current_nr_sectors', and
 	// 'req->buffer' members, and the rq_data_dir() function.
-	
+
 	// Your code here.
 	// 
 	// rq_data_dir
@@ -255,17 +255,17 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 
 		// Your code here.
 
-        if (d == NULL || (filp->f_flags & F_OSPRD_LOCKED) == 0 ) //If the file is not an OSP ramdisk or if there are no locks for the disk
-            return -1;
-        osp_spin_lock(&(d->mutex));
-        filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
-	if(filp_writable)
-		d->count_wlocks--;
-	else
-		d->count_rlocks--;
-        osp_spin_unlock(&(d->mutex));
-        wake_up_all(&(d->blockq));
-        return 0;
+		if (d == NULL || (filp->f_flags & F_OSPRD_LOCKED) == 0 ) //If the file is not an OSP ramdisk or if there are no locks for the disk
+			return -1;
+		osp_spin_lock(&(d->mutex));
+		filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
+		if(filp_writable)
+			d->count_wlocks--;
+		else
+			d->count_rlocks--;
+		osp_spin_unlock(&(d->mutex));
+		wake_up_all(&(d->blockq));
+		return 0;
 	}
 
 	return -1;
@@ -273,11 +273,11 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 
 
 /*
- * osprd_lock
- */
+* osprd_lock
+*/
 
 /*
- * New code here
+* New code here
 */
 
 //Give the ticket to the next ticket in the queue
@@ -296,7 +296,7 @@ void passTicketTail(osprd_info_t* d){
 //	Function will return 0, -1, -EDEADLK, or -EBUSY depending on conditions
 static int acquire_lock(struct file* filp){
 	osprd_info_t *d = file2osprd(filp); // Device info
-    if(d == NULL)
+	if(d == NULL)
 		return -1;
 	int filp_writable = (filp->f_mode & FMODE_WRITE);
 
@@ -326,43 +326,17 @@ static int acquire_lock(struct file* filp){
 	return 0;
 }
 
-static int release_lock(struct file* filp){
-	osprd_info_t *d = file2osprd(filp); // Device info
-	if(d == NULL){
-		return -1;
-	}
-		
-	int filp_writable = filp->f_mode & FMODE_WRITE;
-	int filp_locked   = filp->f_mode & F_OSPRD_LOCKED;
-	
-	if(filp_locked == 0){
-		return -EINVAL;
-	}
-	
-	osp_spin_lock(&d->mutex);
-	if(filp_writable)
-		d->count_wlocks--;
-	else
-		d->count_rlocks--;
-
-	//passTicketTail(d);
-    	filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
-	osp_spin_unlock(&d->mutex);
-	
-	wake_up_all(&d->blockq);
-	return 0;
-}
 /*
- * End new code
+* End new code
 */
 
 
 /*
- * osprd_ioctl(inode, filp, cmd, arg)
- *   Called to perform an ioctl on the named file.
- */
+* osprd_ioctl(inode, filp, cmd, arg)
+*   Called to perform an ioctl on the named file.
+*/
 int osprd_ioctl(struct inode *inode, struct file *filp,
-		unsigned int cmd, unsigned long arg)
+				unsigned int cmd, unsigned long arg)
 {
 	osprd_info_t *d = file2osprd(filp);	// device info
 	int r = 0;			// return value: initially 0
@@ -383,7 +357,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// to write-lock the ramdisk; otherwise attempt to read-lock
 		// the ramdisk.
 		//
-        // This lock request must block using 'd->blockq' until:
+		// This lock request must block using 'd->blockq' until:
 		// 1) no other process holds a write lock;
 		// 2) either the request is for a read lock, or no other process
 		//    holds a read lock; and
@@ -415,7 +389,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// Your code here (instead of the next two lines).
 
 		unsigned currentTicket;
-		
+
 		//TODO: Deadlock function implementation here
 
 		//Give process a ticket
@@ -473,7 +447,30 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// you need, and return 0.
 
 		// Your code here (instead of the next line).
-		r = release_lock(filp);
+		osprd_info_t *d = file2osprd(filp); // Device info
+		if(d == NULL){
+			return -1;
+		}
+
+		int filp_writable = filp->f_mode & FMODE_WRITE;
+		int filp_locked   = filp->f_mode & F_OSPRD_LOCKED;
+
+		if(filp_locked == 0){
+			return -EINVAL;
+		}
+
+		osp_spin_lock(&d->mutex);
+		if(filp_writable)
+			d->count_wlocks--;
+		else
+			d->count_rlocks--;
+
+		//passTicketTail(d);
+		filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
+		osp_spin_unlock(&d->mutex);
+
+		wake_up_all(&d->blockq);
+		r = 0;
 
 	} else
 		r = -ENOTTY; /* unknown command */
@@ -559,9 +556,9 @@ static osprd_info_t *file2osprd(struct file *filp)
 	if (filp) {
 		struct inode *ino = filp->f_dentry->d_inode;
 		if (ino->i_bdev
-		    && ino->i_bdev->bd_disk
-		    && ino->i_bdev->bd_disk->major == OSPRD_MAJOR
-		    && ino->i_bdev->bd_disk->fops == &osprd_ops)
+			&& ino->i_bdev->bd_disk
+			&& ino->i_bdev->bd_disk->major == OSPRD_MAJOR
+			&& ino->i_bdev->bd_disk->fops == &osprd_ops)
 			return (osprd_info_t *) ino->i_bdev->bd_disk->private_data;
 	}
 	return NULL;
@@ -572,8 +569,8 @@ static osprd_info_t *file2osprd(struct file *filp)
 // open files.
 
 static void for_each_open_file(struct task_struct *task,
-		  void (*callback)(struct file *filp, osprd_info_t *user_data),
-		  osprd_info_t *user_data)
+							   void (*callback)(struct file *filp, osprd_info_t *user_data),
+							   osprd_info_t *user_data)
 {
 	int fd;
 	task_lock(task);
