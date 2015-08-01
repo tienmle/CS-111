@@ -52,6 +52,93 @@ typedef struct ticketQueue{
 	struct ticketQueue* next;
 }ticketQueue;
 
+typedef struct pidList {
+	pid_t pid;
+	pidList* next;
+} pidList;
+
+typedef struct AdjacencyList{
+	pid_t pid;	
+	pidList* waitingForList;
+	AdjacencyList* next;	
+} AdjacencyList;
+
+void insertAdjacencyList(AdjacencyList** list, pid_t pid, pid_t waitingFor);
+void insertAdjacecnyList(AdjacencyList** list, pid_t pid, pid_t waitingFor)
+{
+	AdjacencyList* walk = *list;
+	int found = 0;
+	while (walk != NULL && !found)
+	{
+		if (walk->pid == pid)   //If the pid already exists in this adjacency list
+			found  = 1;
+		else
+			walk = walk->next;
+	}	
+	if (walk != NULL)
+		insertpidList(&(walk->waitingForList), waitingFor);
+	else 
+	{
+		AdjacencyList* to_insert = kzalloc(sizeof(AdjacencyList), GFP_ATOMIC);
+		to_insert->pid = pid;
+		to_insert->waitingForList = NULL;
+		insertpidList(&(to_insert->waitingForList), waitingFor);
+		to_insert->next = *list;
+		*list = to_insert; 
+	}
+	return;
+}
+void removeAdjacencyList(AdjacencyList* list, pid_t remove);
+void removeAdjacencyList(AdjacencyList* list, pid_t remove)  //removes pid_t remove from all waitingForLists in the AdjacencyList
+{
+	while (list != NULL)
+	{
+		removepidList(&(list->waitingForList), remove);
+		list = list->next;
+	}
+	return;
+}
+
+void insertpidList(pidList** list, pid_t pid);
+void insertpidList(pidList** list, pid_t pid)
+{
+
+	pidList* to_insert = kzalloc(sizeof(pidList), GFP_ATOMIC);
+	to_insert->pid = pid;
+	to_insert->next = *list
+	*list = to_insert;
+	return;
+}
+
+void removepidList(pidList** list, pid_t pid);
+void removepidList(pidList** list, pid_t pid)
+{
+	pidList* cur;
+	
+	if(*list == NULL){
+		return;
+	}
+	//If the first node in the list is the desired pid, deallocate
+	cur = *list;
+	if(cur->pid == pid){
+		*list = (*list)->next;
+		kfree(cur);
+		return;
+	}
+
+	while( cur->next != NULL){
+		if(cur->next->pid == pid){
+			cur->next = cur->next->next;
+			kfree(cur->next);
+			return;
+		}
+		cur = cur->next;
+	}
+	return; // Did not find pid, returning
+
+}
+
+
 void insertTicket(ticketQueue** list, unsigned newticket);
 void removeTicket(ticketQueue** list, unsigned ticket);
 static int ticketInQueue(struct ticketQueue* list, unsigned ticket);
