@@ -57,9 +57,9 @@ typedef struct pidList {
 	struct pidList* next;
 } pidList;
 
-int existsinPidList(pidList* list, pid_t target);
 void insertpidList(pidList** list, pid_t pid);
 void removepidList(pidList** list, pid_t pid);
+int existsinPidList(pidList* list, pid_t target);
 
 void insertTicket(ticketQueue** list, unsigned newticket);
 void removeTicket(ticketQueue** list, unsigned ticket);
@@ -459,7 +459,13 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		currentTicket = d->ticket_head;
 		d->ticket_head++;
 		insertTicket(&(d->ticketQueue), currentTicket);
-		//DEADLOCK DETECTION: Add current process to list of waiting for locks?
+		
+		if (existsinPidList(d->pid_waiting_for_rlocks, current->pid) || 
+			existsinPidList(d->pid_waiting_for_wlocks, current->pid) //if the process is already waiting for a lock its a deadlock
+		{
+			osp_spin_unlock(&d->mutex);
+			return -EDEADLK;
+		}
 		osp_spin_unlock(&d->mutex);
 		wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket &&
 			!(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
