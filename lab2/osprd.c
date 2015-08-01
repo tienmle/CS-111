@@ -52,10 +52,10 @@ typedef struct ticketQueue{
 	struct ticketQueue* next;
 }ticketQueue;
 
-typedef struct pidList {
-	pid_t pid;
-	struct pidList* next;
-} pidList;
+typedef struct pidList{
+        pid_t pid;
+            struct pidList* next;
+}pidList;
 
 void insertpidList(pidList** list, pid_t pid);
 void removepidList(pidList** list, pid_t pid);
@@ -89,10 +89,9 @@ typedef struct osprd_info {
 	unsigned count_rlocks;	// Count of the number of active read locks
 	unsigned count_wlocks;	// Count of the number of active write locks
 
-	pidList* pid_waiting_for_rlocks;
-	pidList* pid_waiting_for_wlocks;
 	struct ticketQueue* ticketQueue; // List of current number of waiting tickets
-	
+    pidList* pid_waiting_for_rlocks;
+    pidList* pid_waiting_for_wlocks;
 	// The following elements are used internally; you don't need
 	// to understand them.
 	struct request_queue *queue;    // The device request queue.
@@ -180,12 +179,11 @@ static int queueIsEmpty(struct ticketQueue* list){
 
 void insertpidList(pidList** list, pid_t pid)
 {
-
-	pidList* to_insert = kzalloc(sizeof(pidList), GFP_ATOMIC);
-	to_insert->pid = pid;
-	to_insert->next = *list;
-	*list = to_insert;
-	return;
+    pidList* to_insert = kzalloc(sizeof(pidList), GFP_ATOMIC);
+    to_insert->pid = pid;
+    to_insert->next = *list;
+    *list = to_insert;
+    return;
 }
 
 //Remove all instance of pid 
@@ -219,7 +217,7 @@ int existsinPidList(pidList* list, pid_t target)
 {
 	int ret_val = 0;
 	pidList* walk = list;
-	while ( walk != NULL)
+	while (walk != NULL)
 	{
 		if (walk->pid == target)
 		{
@@ -227,8 +225,10 @@ int existsinPidList(pidList* list, pid_t target)
 			break;
 		}
 		walk = walk->next;
+	}
 	return ret_val;
 }
+
 
 // Declare useful helper functions
 
@@ -322,9 +322,15 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 		osp_spin_lock(&(d->mutex));
 		filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
 		if(filp_writable)
+        {
 			d->count_wlocks--;
+            removepidList(&(d->pid_waiting_for_wlocks), current->pid);
+        }
 		else
+        {
 			d->count_rlocks--;
+            removepidList(&(d->pid_waiting_for_rlocks), current->pid);
+        }
 		osp_spin_unlock(&(d->mutex));
 		wake_up_all(&(d->blockq));
 		return 0;
@@ -378,15 +384,16 @@ static int acquire_lock(struct file* filp){
 
 	// Acquire the lock
 	if(filp_writable)
-	{
+    {
 		d->count_wlocks++;
-		listpidInsert(&(d->pid_waiting_for_wlocks), current->pid)
-	}
+        insertpidList(&(d->pid_waiting_for_wlocks), current->pid);
+    }
 	else //We are reading
-	{
+    {
 		d->count_rlocks++;
-		listpidInsert(&(d->pid_waiting_for_rlocks), current->pid);
-	}
+        insertpidList(&(d->pid_waiting_for_rlocks), current->pid);
+    }
+	//TODO: Implement a list of lock holding processes to detect deadlock
 	filp->f_flags |= F_OSPRD_LOCKED;
 	osp_spin_unlock(&d->mutex);
 	return 0;
@@ -464,12 +471,14 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		d->ticket_head++;
 		insertTicket(&(d->ticketQueue), currentTicket);
 		
-		if (existsinPidList(d->pid_waiting_for_rlocks, current->pid) || 
-			existsinPidList(d->pid_waiting_for_wlocks, current->pid) //if the process is already waiting for a lock its a deadlock
+        //if the process is already waiting for a lock and requests another one
+        //of the same ramdisk module, its deadlocking
+        if (existsinPidList(d->pid_waiting_for_rlocks, current->pid) || 
+			existsinPidList(d->pid_waiting_for_wlocks, current->pid))
 		{
 			osp_spin_unlock(&d->mutex);
 			return -EDEADLK;
-		}
+		}                
 		osp_spin_unlock(&d->mutex);
 		wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket &&
 			!(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
@@ -533,15 +542,15 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 
 		osp_spin_lock(&d->mutex);
 		if(filp_writable)
-		{
+        {
 			d->count_wlocks--;
-			removepidList(&(d->pid_waiting_for_wlocks), current->pid);
-		}
+            removepidList(&(d->pid_waiting_for_wlocks), current->pid);
+        }
 		else
-		{
+        {
 			d->count_rlocks--;
-			removepidList(&(d->pid_waiting_for_rlocks), current->pid);
-		}
+            removepidList(&(d->pid_waiting_for_rlocks), current->pid);
+        }
 		//passTicketTail(d);
 		filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
 		osp_spin_unlock(&d->mutex);
@@ -566,8 +575,8 @@ static void osprd_setup(osprd_info_t *d)
 	/* Add code here if you add fields to osprd_info_t. */
 	d->count_rlocks = 0;
 	d->count_wlocks = 0;
-	pid_waiting_for_rlocks = NULL;
-	pid_waiting_for_wlocks = NULL;
+    d->pid_waiting_for_rlocks = NULL;
+    d->pid_waiting_for_wlocks = NULL;
 	d->ticketQueue = NULL;
 }
 
