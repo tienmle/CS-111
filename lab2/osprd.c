@@ -54,90 +54,12 @@ typedef struct ticketQueue{
 
 typedef struct pidList {
 	pid_t pid;
-	pidList* next;
+	struct pidList* next;
 } pidList;
 
-typedef struct AdjacencyList{
-	pid_t pid;	
-	pidList* waitingForList;
-	AdjacencyList* next;	
-} AdjacencyList;
-
-void insertAdjacencyList(AdjacencyList** list, pid_t pid, pid_t waitingFor);
-void insertAdjacecnyList(AdjacencyList** list, pid_t pid, pid_t waitingFor)
-{
-	AdjacencyList* walk = *list;
-	int found = 0;
-	while (walk != NULL && !found)
-	{
-		if (walk->pid == pid)   //If the pid already exists in this adjacency list
-			found  = 1;
-		else
-			walk = walk->next;
-	}	
-	if (walk != NULL)
-		insertpidList(&(walk->waitingForList), waitingFor);
-	else 
-	{
-		AdjacencyList* to_insert = kzalloc(sizeof(AdjacencyList), GFP_ATOMIC);
-		to_insert->pid = pid;
-		to_insert->waitingForList = NULL;
-		insertpidList(&(to_insert->waitingForList), waitingFor);
-		to_insert->next = *list;
-		*list = to_insert; 
-	}
-	return;
-}
-void removeAdjacencyList(AdjacencyList* list, pid_t remove);
-void removeAdjacencyList(AdjacencyList* list, pid_t remove)  //removes pid_t remove from all waitingForLists in the AdjacencyList
-{
-	while (list != NULL)
-	{
-		removepidList(&(list->waitingForList), remove);
-		list = list->next;
-	}
-	return;
-}
-
+int existsinPidList(pidList* list, pid_t target);
 void insertpidList(pidList** list, pid_t pid);
-void insertpidList(pidList** list, pid_t pid)
-{
-
-	pidList* to_insert = kzalloc(sizeof(pidList), GFP_ATOMIC);
-	to_insert->pid = pid;
-	to_insert->next = *list
-	*list = to_insert;
-	return;
-}
-
 void removepidList(pidList** list, pid_t pid);
-void removepidList(pidList** list, pid_t pid)
-{
-	pidList* cur;
-	
-	if(*list == NULL){
-		return;
-	}
-	//If the first node in the list is the desired pid, deallocate
-	cur = *list;
-	if(cur->pid == pid){
-		*list = (*list)->next;
-		kfree(cur);
-		return;
-	}
-
-	while( cur->next != NULL){
-		if(cur->next->pid == pid){
-			cur->next = cur->next->next;
-			kfree(cur->next);
-			return;
-		}
-		cur = cur->next;
-	}
-	return; // Did not find pid, returning
-
-}
-
 
 void insertTicket(ticketQueue** list, unsigned newticket);
 void removeTicket(ticketQueue** list, unsigned ticket);
@@ -167,8 +89,10 @@ typedef struct osprd_info {
 	unsigned count_rlocks;	// Count of the number of active read locks
 	unsigned count_wlocks;	// Count of the number of active write locks
 
+	pidList* pid_waiting_for_rlocks;
+	pidList* pid_waiting_for_wlocks;
 	struct ticketQueue* ticketQueue; // List of current number of waiting tickets
-
+	
 	// The following elements are used internally; you don't need
 	// to understand them.
 	struct request_queue *queue;    // The device request queue.
@@ -254,6 +178,57 @@ static int queueIsEmpty(struct ticketQueue* list){
 }
 
 
+void insertpidList(pidList** list, pid_t pid)
+{
+
+	pidList* to_insert = kzalloc(sizeof(pidList), GFP_ATOMIC);
+	to_insert->pid = pid;
+	to_insert->next = *list;
+	*list = to_insert;
+	return;
+}
+
+//Remove all instance of pid 
+void removepidList(pidList** list, pid_t pid)
+{
+    pidList* walk = *list;
+	pidList* prev = NULL;
+    while (walk != NULL && walk->pid == pid)
+    {
+        *list = walk->next;  
+        kfree(walk);               
+        walk = *list;         
+    } 
+    while (walk != NULL)
+    {
+        while (walk != NULL && walk->pid != pid)
+        {
+            prev = walk;
+            walk = walk->next;
+        }
+        if (walk == NULL) 
+			return;
+        prev->next = walk->next;
+        kfree(walk); 
+        walk = prev->next;
+    }
+}
+
+//If the target exists return 1, else 0
+int existsinPidList(pidList* list, pid_t target)
+{
+	int ret_val = 0;
+	pidList* walk = list;
+	while ( walk != NULL)
+	{
+		if (walk->pid == target)
+		{
+			ret_val = 1;
+			break;
+		}
+		walk = walk->next;
+	return ret_val;
+}
 
 // Declare useful helper functions
 
@@ -576,6 +551,8 @@ static void osprd_setup(osprd_info_t *d)
 	/* Add code here if you add fields to osprd_info_t. */
 	d->count_rlocks = 0;
 	d->count_wlocks = 0;
+	pid_waiting_for_rlocks = NULL;
+	pid_waiting_for_wlocks = NULL;
 	d->ticketQueue = NULL;
 }
 
