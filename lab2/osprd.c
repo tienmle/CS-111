@@ -378,11 +378,15 @@ static int acquire_lock(struct file* filp){
 
 	// Acquire the lock
 	if(filp_writable)
+	{
 		d->count_wlocks++;
+		listpidInsert(&(d->pid_waiting_for_wlocks), current->pid)
+	}
 	else //We are reading
+	{
 		d->count_rlocks++;
-
-	//TODO: Implement a list of lock holding processes to detect deadlock
+		listpidInsert(&(d->pid_waiting_for_rlocks), current->pid);
+	}
 	filp->f_flags |= F_OSPRD_LOCKED;
 	osp_spin_unlock(&d->mutex);
 	return 0;
@@ -529,10 +533,15 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 
 		osp_spin_lock(&d->mutex);
 		if(filp_writable)
+		{
 			d->count_wlocks--;
+			removepidList(&(d->pid_waiting_for_wlocks), current->pid);
+		}
 		else
+		{
 			d->count_rlocks--;
-
+			removepidList(&(d->pid_waiting_for_rlocks), current->pid);
+		}
 		//passTicketTail(d);
 		filp->f_flags = filp->f_flags & ~(F_OSPRD_LOCKED);
 		osp_spin_unlock(&d->mutex);
