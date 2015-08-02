@@ -154,21 +154,6 @@ void removeTicket(struct ticketQueue** list, unsigned ticket)
 	return; // Did not find ticket, returning
 }
 
-//Boolean returns if ticket is in list or not
-static int ticketInQueue(struct ticketQueue* list, unsigned ticket){
-	ticketQueue* cur;
-
-	if(list == NULL)
-		return 0;
-	cur = list;
-
-	while(cur){
-		if(cur->ticket == ticket)
-			return 1;
-		cur = cur->next;
-	}
-	return 0;
-}
 
 static int queueIsEmpty(struct ticketQueue* list){
 	if(list == NULL)
@@ -280,12 +265,13 @@ static void osprd_process_request(osprd_info_t *d, struct request *req)
 	unsigned sec = req->sector * SECTOR_SIZE;
 	unsigned size = req->current_nr_sectors * SECTOR_SIZE;	
 
+	osp_spin_lock(&d->mutex);
 	if(rq_data_dir(req) == READ){
 		memcpy(req->buffer, d->data + sec, size);
 	} else if(rq_data_dir(req) == WRITE){
 		memcpy(d->data + sec, req->buffer, size);
 	}
-
+	osp_spin_unlock(&d->mutex);
 
 	end_request(req, 1);
 }
@@ -496,6 +482,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		r = acquire_lock(filp);
 		if(r != 0)
 			eprintk("Error: Did not acquire file lock even when we should have been able to");
+		
 		//Succesfully acquired lock, cleanup
 		osp_spin_lock(&d->mutex);
 		removeTicket(&(d->ticketQueue), currentTicket);
