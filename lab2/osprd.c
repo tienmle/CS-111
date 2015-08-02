@@ -481,7 +481,8 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		}                
 		osp_spin_unlock(&d->mutex);
 		wait_event_interruptible(d->blockq, d->ticket_tail == currentTicket &&
-			!(d->count_wlocks > 0 || (filp_writable && d->count_rlocks > 0))
+			((filp_writable && d->count_rlocks == 0 && d->count_wlocks == 0) ||
+			(!filp_writable && d->count_wlocks == 0))
 			);
 		if(signal_pending(current)){
 			osp_spin_lock(&d->mutex);
