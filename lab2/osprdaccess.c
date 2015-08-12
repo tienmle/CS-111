@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
 	//TODO: Figure out setting password and unlocking ramdisk
 	}
 	else if(unlock){
-	//TODO
+	//TODO: what is method to read/write?
 	}
 	else
 		transfer(devfd, STDOUT_FILENO, size);
