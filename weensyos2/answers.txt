@@ -1,0 +1,88 @@
+Name: Tien Le
+UCLA ID: 604180315
+
+Collaborators: N/A
+
+-------------------------------------------------------------------------------
+
+Response to Exercise 1:
+
+The name of the scheduling algorithm is: round-robin
+
+
+(Exercise 2 is a coding exercise)
+	Strict priority scheduling is implemented in schedule() in the
+schedos-kernel.c file.
+
+Response to Exercise 3:
+
+Average turnaround time for scheduling_algorithm 0: 1278.5
+	320 * 4 - 3 ms = 1277 ms
+	320 * 4 - 2 ms = 1278 ms
+	320 * 4 - 1 ms = 1279 ms
+	320 * 4 - 0 ms = 1280 ms
+	Average: 1278.5 ms
+
+Average turnaround time for scheduling_algorithm 1: 
+	(320 + 640 + 960 + 1280)/4 = 800 ms
+
+Average wait time for scheduling_algorithm 0:
+	(0 + 1 + 2 + 3)/4 = 1.5 ms
+
+Average wait time for scheduling_algorithm 1:
+	(0 + 320 + 640 + 960)/4 = 480 ms
+
+Exercise 4:
+
+Did you complete Exercise 4A, Exercise 4B, or both for extra credit?
+	Both 4A and 4B  were completed in schedule() in the schedos-kernel.c
+file. Variables were added to the process_t struct in schedos-kernel.h to
+store these values for use by the scheduler. Setting these values can be done
+by system calls added in schedos-app.h which call the interrupt handler in
+schedos-kernel.c
+
+Exercise 5:
+ 
+	On the image in the spec, you can see that the timer interrupt
+during process 4:
+
+	1234 1234 1234 1234 123 1234
+
+	Process 4 does not print a character, so the interrupt happened there.
+
+(Exercise 6 is a coding exercise)
+
+	Exercise 6 was completed by printing the character to the screen using a
+system call. Since interrupts are disabled in the kernel, this guarantees
+printing is atomic. Code was added to schedos-kernel.c in the interrupt
+handler and the system call implemented was sys_print.
+
+Anything else you'd like us to know:
+
+	Although the process variables were initialized directly in the start
+function, the system calls to actually adjust the priority or a share of a
+process are implemented. To facilitate testing, I chose to initialize
+everything using the given #define fields at the top of schedos-kern.c.
+
+
+Extra credit exercises: (All completed)
+
+	4A and 4B were both completed.
+
+	Exercise 7 was implemented with a lottery scheduler.
+
+Interrupts to add and remove tickets were implemented. Tickets
+are placed into a pid array by a process by using a system call. When the
+lottery scheduler is used, I call a random() function to randomly pick a value
+from that array. Removing a ticket will delete from the array.
+
+A variable was added in the process_t struct in order to store
+the number of tickets a process held on to. You can test the functionality by
+adjusting the #define LOTTERY_x__ variables at the top of schedos-kern.c, but
+the sum of the variables must be <= MAX_TICKET_NUMBER.
+
+	Exercise 8 was completed.
+
+Exercise 8 was completed with using an atomic_swap on a lock variable to
+synchronize writing to the console. The lock variable was declared in shared
+memory.

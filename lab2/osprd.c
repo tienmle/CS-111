@@ -17,6 +17,10 @@
 #include "spinlock.h"
 #include "osprd.h"
 
+
+#include <linux/crypto.h>
+
+
 /* The size of an OSPRD sector. */
 #define SECTOR_SIZE	512
 
@@ -92,6 +96,10 @@ typedef struct osprd_info {
 	struct ticketQueue* ticketQueue; // List of current number of waiting tickets
     pidList* pid_waiting_for_rlocks;
     pidList* pid_waiting_for_wlocks;
+
+	//Structures for encrypting
+	//TODO: Figure out what we need for this
+	char* password[MAX_PASSWORD_LENGTH];
 	// The following elements are used internally; you don't need
 	// to understand them.
 	struct request_queue *queue;    // The device request queue.
@@ -546,7 +554,13 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		wake_up_all(&d->blockq);
 		r = 0;
 
-	} else
+	} else if(cmd == OSPRDADDPASSWORD){
+		r = -ENOTTY; //TODO: IMPLEMENT
+	} else if(cmd == OSPRDAUTHORIZE){
+		r = -ENOTTY  //TODO: IMPLEMENT
+	}
+	
+	else
 		r = -ENOTTY; /* unknown command */
 	return r;
 }
@@ -566,6 +580,7 @@ static void osprd_setup(osprd_info_t *d)
     d->pid_waiting_for_rlocks = NULL;
     d->pid_waiting_for_wlocks = NULL;
 	d->ticketQueue = NULL;
+	d->password[0] = '\0';
 }
 
 
@@ -593,6 +608,10 @@ static void osprd_process_request_queue(request_queue_t *q)
 
 static struct file_operations osprd_blk_fops;
 static int (*blkdev_release)(struct inode *, struct file *);
+//New code for design project
+ssize_t (*blkdev_read) (struct file *, char *, size_t, loff_t *);
+ssize_t (*blkdev_write) (struct file *, const char *, size_t, loff_t *);
+
 
 static int _osprd_release(struct inode *inode, struct file *filp)
 {
@@ -601,12 +620,32 @@ static int _osprd_release(struct inode *inode, struct file *filp)
 	return (*blkdev_release)(inode, filp);
 }
 
+
+//TODO: Flesh this out
+ssize_t _osprd_encrypted_read (struct file * filp, char * usr, size_t size, loff_t * loff){
+	ssize_t ret = (*blkdev_read)(filp, usr, size, loff);
+	return ret;
+}
+
+//TODO: Flesh this out
+ssize_t _osprd_encrypted_write (struct file * filp, const char * usr, size_t size, loff_t * loff){
+	ssize_t ret = (*blkdev_write)(filp, usr, size, loff);
+	return ret;
+}
+
+
 static int _osprd_open(struct inode *inode, struct file *filp)
 {
 	if (!osprd_blk_fops.open) {
 		memcpy(&osprd_blk_fops, filp->f_op, sizeof(osprd_blk_fops));
 		blkdev_release = osprd_blk_fops.release;
 		osprd_blk_fops.release = _osprd_release;
+
+		//Set functions to point .read and .write to internally written functions
+		blkdev_read = osprd_blk_fops.read;
+		blkdev_write = osprd_blk_fops.write;
+		osprd_blk_fops.read		= _osprd_encrypted_read;
+		osprd_blk_fops.write	= _osprd_encrypted_write;
 	}
 	filp->f_op = &osprd_blk_fops;
 	return osprd_open(inode, filp);
