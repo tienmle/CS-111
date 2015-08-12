@@ -29,6 +29,11 @@ Usage: ./osprdaccess -w [SIZE] [OPTIONS] [DEVICE...] < DATA\n\
        -l would block, -L will return a \"resource busy\" error instead.\n\
    -d DELAY\n\
        Wait DELAY seconds before reading/writing (but after locking).\n\
+   -p ENCRYPTED ENTER PASSWORD\n\
+	   Sets up a password for this ramdisk. Any writes to this disk will now be\n\
+	   encrypted.\n\
+   -u ENCRYPTED UNLOCK RAMDISK\n\
+	   Unlocks the ramdisk with the provided key.\n\
    DEVICE is the device to read/write.  The default is /dev/osprda.\n\
    You can also give more than one device name.  All devices are opened, but\n\
    only the last device is read or written.\n");
@@ -136,7 +141,13 @@ int main(int argc, char *argv[])
 	double delay = 0;
 	double lock_delay = 0;
 	const char *devname = "/dev/osprda";
+	
+	int setpassword = 0;
+	int unlock = 0;
 
+	
+	char newpassword[MAX_PASSWORD_LENGTH] = "";
+	char unlockpassword[MAX_PASSWORD_LENGTH] = "";
  flag:
 	// Detect a read/write option
 	if (argc >= 2 && strcmp(argv[1], "-r") == 0) {
@@ -196,6 +207,38 @@ int main(int argc, char *argv[])
 		goto flag;
 	}
 
+	//****DESIGN PROJECT
+	// Set a password
+	if (argc >= 2 && strcmp(argv[1], "-p") == 0) {
+		argv++, argc--;
+		setpassword = 1;
+		unlock = 0;
+
+		if(strlen(argv[1]) > MAX_PASSWORD_LENGTH)
+			usage(1);
+		else
+		{
+			strncpy(newpassword, argv[1], MAX_PASSWORD_LENGTH-1);
+			argv++, argc--;
+		}
+		goto flag;
+	}
+	// Unlock a ramdisk with password
+	if (argc >= 2 && strcmp(argv[1], "-u") == 0) {
+		argv++, argc--;
+		unlock = 1;
+		setpassword = 0;
+
+		if(strlen(argv[1]) > MAX_PASSWORD_LENGTH)
+			usage(1);
+		else
+		{
+			strncpy(unlockpassword, argv[1], MAX_PASSWORD_LENGTH-1);
+			argv++, argc--;
+		}
+		goto flag;
+	}
+
 	// Detect a help option
 	if (argc >= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
 		usage(0);
@@ -247,8 +290,14 @@ int main(int argc, char *argv[])
 		transfer_zero(devfd, size);
 	else if (mode & O_WRONLY)
 		transfer(STDIN_FILENO, devfd, size);
+	else if(setpassword){
+	//TODO: Figure out setting password and unlocking ramdisk
+	}
+	else if(unlock){
+	//TODO
+	}
 	else
 		transfer(devfd, STDOUT_FILENO, size);
-
+	
 	exit(0);
 }
