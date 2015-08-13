@@ -4,6 +4,10 @@
 #include <linux/moduleparam.h>
 #include <linux/init.h>
 
+#include <linux/crypto.h>
+#include <linux/scatterlist.h>
+#include <linux/err.h>
+
 #include <linux/sched.h>
 #include <linux/kernel.h>  /* printk() */
 #include <linux/errno.h>   /* error codes */
@@ -16,10 +20,6 @@
 
 #include "spinlock.h"
 #include "osprd.h"
-
-
-#include <linux/crypto.h>
-
 
 /* The size of an OSPRD sector. */
 #define SECTOR_SIZE	512
@@ -48,6 +48,60 @@ MODULE_AUTHOR("Tien Le and David Nguyen");
 static int nsectors = 32;
 module_param(nsectors, int, 0);
 
+#define SHA1_LENGTH		20
+/* ENCRYPTION CODE */
+//Referenced the documentation/crypto/api-intro.txt file for this implementation
+// input is the plaintext we want to create a hash of
+// inputlen is the length of this, usually MAX_PASSWORD_LENGTH
+// output is the returned hash
+int sha1_hash(char* input, unsigned inputlen, char** output){
+	struct scatterlist sg;
+	struct crypto_tfm *tfm;
+	int status;
+	
+	//Zero out the output, just in case
+	memset(*output, 0x00, SHA1_LENGTH);
+
+	//Initialize tfm
+	tfm = crypto_alloc_tfm("sha1", 0);
+	if(tfm == NULL){
+		eprintk("Failed to load transform for SHA1\n");
+		return -EINVAL;
+	}
+	sg_init_one(&sg, (u8 *)input, inputlen);
+	//Configure hashing engine by description in hash_desc
+	crypto_digest_init(tfm);
+	//Perform the hashing method
+	crypto_digest_update(tfm, &sg, 1);
+	//Copy the hash to the array
+
+	crypto_digest_final(tfm, *output);
+
+	//Cleanup
+	crypto_free_tfm(tfm);
+	return 0;
+}
+
+static void encrypt(char *buf, char *key, unsigned size)  
+{   
+	//Length of buf must equal length of key
+	//Temporarily use XOR to make sure everything works
+	//TODO: Implement a more sophisticated algorithm or use linux/crypto
+	int i;
+	for(i = 0; i < size; i++)
+	{
+		buf[i] ^= key[i];
+	}
+}
+
+void decrypt(char *buf, char *key, unsigned size){
+	int i;
+	for(i = 0; i < size; i++)
+	{
+		buf[i] ^= key[i];
+	}
+}
+
 /* New struct declarations to help track processes */
 // TICKET LINKED LIST
 // Data structure to keep track of tickets
@@ -67,7 +121,6 @@ int existsinPidList(pidList* list, pid_t target);
 
 void insertTicket(ticketQueue** list, unsigned newticket);
 void removeTicket(ticketQueue** list, unsigned ticket);
-static int ticketInQueue(struct ticketQueue* list, unsigned ticket);
 static int queueIsEmpty(struct ticketQueue* list);
 
 /* The internal representation of our device. */
@@ -99,7 +152,7 @@ typedef struct osprd_info {
 
 	//Structures for encrypting
 	//TODO: Figure out what we need for this
-	char* password[MAX_PASSWORD_LENGTH];
+	unsigned char passwordhash[SHA1_LENGTH];
 	// The following elements are used internally; you don't need
 	// to understand them.
 	struct request_queue *queue;    // The device request queue.
@@ -457,6 +510,23 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 
 		unsigned currentTicket;
 
+                       char* buffer = (char*) kmalloc(MAX_PASSWORD_LENGTH,GFP_ATOMIC);
+		       int p;
+			for(p = 0; p < MAX_PASSWORD_LENGTH; p++)
+				buffer[p] = 'a';
+			buffer[MAX_PASSWORD_LENGTH-1] = '\0';
+                        char* outputhash = (char*) kmalloc(SHA1_LENGTH, GFP_ATOMIC);
+                        sha1_hash(buffer, MAX_PASSWORD_LENGTH, &outputhash);
+        int i;
+                        osp_spin_lock(&d->mutex);
+                        memcpy(d->passwordhash, outputhash, SHA1_LENGTH);
+                        osp_spin_unlock(&d->mutex);
+	eprintk("Starting\n");
+        for(i = 0; i < SHA1_LENGTH; i++){
+                eprintk("%d\n",d->passwordhash[i]);
+        }
+	eprintk("Ending\n");
+
 		//TODO: Deadlock function implementation here
 
 		//Give process a ticket
@@ -554,10 +624,32 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		wake_up_all(&d->blockq);
 		r = 0;
 
-	} else if(cmd == OSPRDADDPASSWORD){
-		r = -ENOTTY; //TODO: IMPLEMENT
-	} else if(cmd == OSPRDAUTHORIZE){
-		r = -ENOTTY  //TODO: IMPLEMENT
+	} else if(cmd == OSPRDENTERPASSWORD){
+		if(arg == 0){
+			//d->password = '\0';
+			r = 0;
+		}
+		else
+		{
+			char* outputhash = (char*) kmalloc(SHA1_LENGTH, GFP_ATOMIC);		
+			char* buffer = (char*) kmalloc(MAX_PASSWORD_LENGTH,GFP_ATOMIC);
+			r = copy_from_user(buffer, (const char __user*) arg, MAX_PASSWORD_LENGTH);
+			if(r != 0){
+				kfree(buffer);
+				return -1;	
+			}
+			sha1_hash(buffer, MAX_PASSWORD_LENGTH, &outputhash);
+			osp_spin_lock(&d->mutex);
+			memcpy(d->passwordhash, outputhash, SHA1_LENGTH);
+			osp_spin_unlock(&d->mutex);
+		
+			kfree(buffer);
+			
+			int k;
+			for(k = 0; k < SHA1_LENGTH; k++)
+				eprintk("%d - %d\n", k, d->passwordhash[k]);
+		}
+			
 	}
 	
 	else
@@ -580,7 +672,7 @@ static void osprd_setup(osprd_info_t *d)
     d->pid_waiting_for_rlocks = NULL;
     d->pid_waiting_for_wlocks = NULL;
 	d->ticketQueue = NULL;
-	d->password[0] = '\0';
+	d->passwordhash[0] = 0;
 }
 
 
@@ -641,9 +733,9 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 		kfree(buf);
 		return copystatus;
 	}
-
+	//eprintk("Calling encrypted read\n");
+	
 	//TODO: UNENCRPYT DATA HERE
-
 	copystatus = copy_to_user(user, buf, size);
 	kfree(buf);
 	if(copystatus){
@@ -676,7 +768,7 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 	}
 
 	//TODO: ENCRYPTION HERE
-
+	encrypt(buf
 	copystatus = copy_to_user(user, buf, size);
 	kfree(buf);
 	if(copystatus){
@@ -693,8 +785,11 @@ static int _osprd_open(struct inode *inode, struct file *filp)
 		memcpy(&osprd_blk_fops, filp->f_op, sizeof(osprd_blk_fops));
 		blkdev_release = osprd_blk_fops.release;
 		osprd_blk_fops.release = _osprd_release;
-
 		//Set functions to point .read and .write to internally written functions
+		//blkdev_read and blkdev_write preserve the original read and write functions
+		//so we don't need to reinvent the wheel here, we read and write from the disk
+		//using the same interface, but we're going to modify the character strings
+		//to encrypt/decrypt.
 		blkdev_read = osprd_blk_fops.read;
 		blkdev_write = osprd_blk_fops.write;
 		osprd_blk_fops.read		= _osprd_encrypted_read;

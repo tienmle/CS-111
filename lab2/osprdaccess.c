@@ -223,6 +223,7 @@ int main(int argc, char *argv[])
 		}
 		goto flag;
 	}
+	/*
 	// Unlock a ramdisk with password
 	if (argc >= 2 && strcmp(argv[1], "-u") == 0) {
 		argv++, argc--;
@@ -238,6 +239,7 @@ int main(int argc, char *argv[])
 		}
 		goto flag;
 	}
+	*/
 
 	// Detect a help option
 	if (argc >= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
@@ -284,7 +286,9 @@ int main(int argc, char *argv[])
 		perror("lseek");
 		exit(1);
 	}
-
+	if(setpassword && ioctl(devfd, OSPRDENTERPASSWORD, newpassword){
+		perror("ioctl OSPRDENTERPASSWORD");
+	}
 	// Read or write
 	if ((mode & O_WRONLY) && zero)
 		transfer_zero(devfd, size);
@@ -292,6 +296,7 @@ int main(int argc, char *argv[])
 		transfer(STDIN_FILENO, devfd, size);
 	else if(setpassword){
 	//TODO: Figure out setting password and unlocking ramdisk
+
 	}
 	else if(unlock){
 	//TODO: what is method to read/write?
