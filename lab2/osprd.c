@@ -49,6 +49,7 @@ static int nsectors = 32;
 module_param(nsectors, int, 0);
 
 #define SHA1_LENGTH		20
+
 /* ENCRYPTION CODE */
 //Referenced the documentation/crypto/api-intro.txt file for this implementation
 // input is the plaintext we want to create a hash of
@@ -80,24 +81,25 @@ int sha1_hash(char* input, unsigned inputlen, char** output){
 	crypto_free_tfm(tfm);
 	return 0;
 }
-
-static void encrypt(char *buf, char *key, unsigned size)  
+//Takes 3 parameters:
+// The plaintext string, the hashed password, and the amount of characters to translate
+static void encrypt(char *plaintext, char *key, unsigned size)  
 {   
 	//Length of buf must equal length of key
 	//Temporarily use XOR to make sure everything works
-	//TODO: Implement a more sophisticated algorithm or use linux/crypto
+	//TODO: Implement a more sophisticated algorithm or use linux/crypto.h
 	int i;
 	for(i = 0; i < size; i++)
 	{
-		buf[i] ^= key[i];
+		plaintext[i] ^= key[i];
 	}
 }
 
-void decrypt(char *buf, char *key, unsigned size){
+void decrypt(char *ecnrypted, char *key, unsigned size){
 	int i;
 	for(i = 0; i < size; i++)
 	{
-		buf[i] ^= key[i];
+		ecnrypted[i] ^= key[i];
 	}
 }
 
@@ -634,6 +636,8 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		}
 		else
 		{
+			//int k = 0;
+			//for(k = 0; k < 100; k++){
 			char* outputhash = (char*) kmalloc(SHA1_LENGTH, GFP_ATOMIC);		
 			char* buffer = (char*) kmalloc(MAX_PASSWORD_LENGTH,GFP_ATOMIC);
 			r = copy_from_user(buffer, (const char __user*) arg, MAX_PASSWORD_LENGTH);
@@ -647,6 +651,9 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			osp_spin_unlock(&d->mutex);
 		
 			kfree(buffer);
+			kfree(outputhash);
+
+		//	}
 			/*
 			int k;
 			for(k = 0; k < SHA1_LENGTH; k++)
@@ -746,8 +753,6 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 		kfree(buf);
 		return copystatus;
 	}
-	//eprintk("Calling encrypted read\n");
-	
 	
 	//Decryption code
 
@@ -759,19 +764,24 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 	currentsize = size;
 	towrite = SHA1_LENGTH;
 	offset = (int) fileoffset % towrite;
-	initialoffset = towrite - offset;
+	initialoffset = offset; // towrite - offset;
+	int counter = size/SHA1_LENGTH;
+	//eprintk("Debugging data: \n offset - %d \n initialoffset - %d \n", offset, initialoffset);
+	//eprintk("Debugging data: \n size - %d \n counter - %d", size, counter);
 
-	if( offset > 0)
-	{
-		decrypt(buf, d->passwordhash, initialoffset);
-		currentsize -= initialoffset;
-	}
-	while(currentsize > 0)
+	while( counter > 0)
 	{
 		decrypt(buf + (size - currentsize), d->passwordhash, towrite);
 		currentsize -= towrite;
+		counter--;
 	}
-	
+
+	if( offset > 0)
+	{
+		decrypt(buf + (size - currentsize), d->passwordhash, initialoffset);
+		currentsize -= initialoffset;
+	}
+
 	copystatus = copy_to_user(user, buf, size);
 	kfree(buf);
 	if(copystatus){
@@ -812,7 +822,7 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 	}
 
 	//Encryption code
-
+	// We encrypt in units of SHA1_LENGTH blocks
 	long currentsize;
 	unsigned long offset;
 	long initialoffset;
@@ -821,7 +831,7 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 	currentsize = size;
 	towrite = SHA1_LENGTH;
 	offset = (int) fileoffset % towrite;
-	initialoffset = towrite - offset;
+	initialoffset = offset;
 
 	if( offset > 0)
 	{
@@ -839,10 +849,11 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 	if(copystatus){
 		return -1;
 	}
-	//Write the data and zero out the password
+	//Write the data and zero out the hashed password so another read doesn't use it
 	int p = 0;
 	for(p = 0; p < SHA1_LENGTH; p++)
 		d->passwordhash[p] = 0;
+	
 	return (*blkdev_write)(filp,user,size,loff);
 }
 
