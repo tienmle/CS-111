@@ -513,24 +513,6 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// Your code here (instead of the next two lines).
 
 		unsigned currentTicket;
-/*
-                       char* buffer = (char*) kmalloc(MAX_PASSWORD_LENGTH,GFP_ATOMIC);
-		       int p;
-			for(p = 0; p < MAX_PASSWORD_LENGTH; p++)
-				buffer[p] = 'a';
-			buffer[MAX_PASSWORD_LENGTH-1] = '\0';
-                        char* outputhash = (char*) kmalloc(SHA1_LENGTH, GFP_ATOMIC);
-                        sha1_hash(buffer, MAX_PASSWORD_LENGTH, &outputhash);
-        int i;
-                        osp_spin_lock(&d->mutex);
-                        memcpy(d->passwordhash, outputhash, SHA1_LENGTH);
-                        osp_spin_unlock(&d->mutex);
-	eprintk("Starting\n");
-        for(i = 0; i < SHA1_LENGTH; i++){
-                eprintk("%d\n",d->passwordhash[i]);
-        }
-	eprintk("Ending\n");
-*/
 
 		//TODO: Deadlock function implementation here
 
@@ -636,8 +618,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		}
 		else
 		{
-			//int k = 0;
-			//for(k = 0; k < 100; k++){
+
 			char* outputhash = (char*) kmalloc(SHA1_LENGTH, GFP_ATOMIC);		
 			char* buffer = (char*) kmalloc(MAX_PASSWORD_LENGTH,GFP_ATOMIC);
 			r = copy_from_user(buffer, (const char __user*) arg, MAX_PASSWORD_LENGTH);
@@ -653,12 +634,6 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			kfree(buffer);
 			kfree(outputhash);
 
-		//	}
-			/*
-			int k;
-			for(k = 0; k < SHA1_LENGTH; k++)
-				eprintk("%d - %d\n", k, d->passwordhash[k]);
-				*/
 		}
 			
 	}
@@ -740,8 +715,7 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 
 	//eprintk("Password given, trying to unencrypt..\n");
 	ssize_t status;
-	if(!d)
-		return (*blkdev_read)(filp, user, size, loff);
+
 	buf = (char*) kmalloc(size, GFP_KERNEL);
 	if(buf == NULL)
 		return -ENOMEM;
@@ -766,8 +740,6 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 	offset = (int) fileoffset % towrite;
 	initialoffset = offset; // towrite - offset;
 	int counter = size/SHA1_LENGTH;
-	//eprintk("Debugging data: \n offset - %d \n initialoffset - %d \n", offset, initialoffset);
-	//eprintk("Debugging data: \n size - %d \n counter - %d", size, counter);
 
 	while( counter > 0)
 	{
