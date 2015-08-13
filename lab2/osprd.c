@@ -57,7 +57,6 @@ module_param(nsectors, int, 0);
 int sha1_hash(char* input, unsigned inputlen, char** output){
 	struct scatterlist sg;
 	struct crypto_tfm *tfm;
-	int status;
 	
 	//Zero out the output, just in case
 	memset(*output, 0x00, SHA1_LENGTH);
@@ -306,11 +305,13 @@ static void for_each_open_file(struct task_struct *task,
 */
 static void osprd_process_request(osprd_info_t *d, struct request *req)
 {
+	unsigned sec;
+	unsigned size;
+
 	if(!blk_fs_request(req)) {
 		end_request(req, 0);
 		return;
 	}
-
 	// EXERCISE: Perform the read or write request by copying data between
 	// our data array and the request's buffer.
 	// Hint: The 'struct request' argument tells you what kind of request
@@ -323,8 +324,8 @@ static void osprd_process_request(osprd_info_t *d, struct request *req)
 	// 
 	// rq_data_dir
 	// #define rq_data_dir(rq)         ((rq)->flags & 1)
-	unsigned sec = req->sector * SECTOR_SIZE;
-	unsigned size = req->current_nr_sectors * SECTOR_SIZE;	
+	sec = req->sector * SECTOR_SIZE;
+	size = req->current_nr_sectors * SECTOR_SIZE;	
 
 	osp_spin_lock(&d->mutex);
 	if(rq_data_dir(req) == READ){
@@ -413,7 +414,8 @@ static int acquire_lock(struct file* filp){
 	osprd_info_t *d = file2osprd(filp); // Device info
 	if(d == NULL)
 		return -1;
-	int filp_writable = (filp->f_mode & FMODE_WRITE);
+	int filp_writable;
+	filp_writable = (filp->f_mode & FMODE_WRITE);
 
 	//Basic check if file already has a lock
 	if(filp->f_flags & F_OSPRD_LOCKED)
@@ -509,7 +511,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// Your code here (instead of the next two lines).
 
 		unsigned currentTicket;
-
+/*
                        char* buffer = (char*) kmalloc(MAX_PASSWORD_LENGTH,GFP_ATOMIC);
 		       int p;
 			for(p = 0; p < MAX_PASSWORD_LENGTH; p++)
@@ -526,6 +528,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
                 eprintk("%d\n",d->passwordhash[i]);
         }
 	eprintk("Ending\n");
+*/
 
 		//TODO: Deadlock function implementation here
 
@@ -644,10 +647,11 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			osp_spin_unlock(&d->mutex);
 		
 			kfree(buffer);
-			
+			/*
 			int k;
 			for(k = 0; k < SHA1_LENGTH; k++)
 				eprintk("%d - %d\n", k, d->passwordhash[k]);
+				*/
 		}
 			
 	}
@@ -727,7 +731,7 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 	if(d->passwordhash[0] == '\0')
 		return (*blkdev_read)(filp, user, size, loff);
 
-	eprintk("Password given, trying to unencrypt..\n");
+	//eprintk("Password given, trying to unencrypt..\n");
 	ssize_t status;
 	if(!d)
 		return (*blkdev_read)(filp, user, size, loff);
@@ -744,7 +748,30 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 	}
 	//eprintk("Calling encrypted read\n");
 	
-	//TODO: UNENCRPYT DATA HERE
+	
+	//Decryption code
+
+	long currentsize;
+	unsigned long offset;
+	long initialoffset;
+	long towrite;
+	loff_t fileoffset = *loff;
+	currentsize = size;
+	towrite = SHA1_LENGTH;
+	offset = (int) fileoffset % towrite;
+	initialoffset = towrite - offset;
+
+	if( offset > 0)
+	{
+		decrypt(buf, d->passwordhash, initialoffset);
+		currentsize -= initialoffset;
+	}
+	while(currentsize > 0)
+	{
+		decrypt(buf + (size - currentsize), d->passwordhash, towrite);
+		currentsize -= towrite;
+	}
+	
 	copystatus = copy_to_user(user, buf, size);
 	kfree(buf);
 	if(copystatus){
@@ -784,7 +811,29 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 		return copystatus;
 	}
 
-	//TODO: ENCRYPTION HERE
+	//Encryption code
+
+	long currentsize;
+	unsigned long offset;
+	long initialoffset;
+	long towrite;
+	loff_t fileoffset = *loff;
+	currentsize = size;
+	towrite = SHA1_LENGTH;
+	offset = (int) fileoffset % towrite;
+	initialoffset = towrite - offset;
+
+	if( offset > 0)
+	{
+		encrypt(buf, d->passwordhash, initialoffset);
+		currentsize -= initialoffset;
+	}
+	while(currentsize > 0)
+	{
+		encrypt(buf + (size - currentsize), d->passwordhash, towrite);
+		currentsize -= towrite;
+	}
+
 	copystatus = copy_to_user(user, buf, size);
 	kfree(buf);
 	if(copystatus){
