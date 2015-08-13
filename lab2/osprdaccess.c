@@ -286,7 +286,7 @@ int main(int argc, char *argv[])
 		perror("lseek");
 		exit(1);
 	}
-	if(setpassword && ioctl(devfd, OSPRDENTERPASSWORD, newpassword){
+	if(setpassword && ioctl(devfd, OSPRDENTERPASSWORD, newpassword)){
 		perror("ioctl OSPRDENTERPASSWORD");
 	}
 	// Read or write
@@ -294,15 +294,11 @@ int main(int argc, char *argv[])
 		transfer_zero(devfd, size);
 	else if (mode & O_WRONLY)
 		transfer(STDIN_FILENO, devfd, size);
-	else if(setpassword){
-	//TODO: Figure out setting password and unlocking ramdisk
-
-	}
 	else if(unlock){
 	//TODO: what is method to read/write?
 	}
-	else
+	else{
 		transfer(devfd, STDOUT_FILENO, size);
-	
+	}
 	exit(0);
 }

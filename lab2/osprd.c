@@ -716,9 +716,18 @@ static int _osprd_release(struct inode *inode, struct file *filp)
 //osprd_encrypted_read takes the password, hashes it
 ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, loff_t * loff){
 	//ssize_t ret = (*blkdev_read)(filp, user, size, loff);
+
 	char* buf;
 	int copystatus;
 	osprd_info_t *d = file2osprd(filp);
+	if(!d)
+		return (*blkdev_read)(filp, user, size, loff);
+	
+	//If no password was given, we just use the regular read as normal
+	if(d->passwordhash[0] == '\0')
+		return (*blkdev_read)(filp, user, size, loff);
+
+	eprintk("Password given, trying to unencrypt..\n");
 	ssize_t status;
 	if(!d)
 		return (*blkdev_read)(filp, user, size, loff);
@@ -741,6 +750,10 @@ ssize_t _osprd_encrypted_read (struct file * filp, char * user, size_t size, lof
 	if(copystatus){
 		return -1;
 	}
+	//Zero out the password
+	int p;
+	for(p = 0; p < SHA1_LENGTH; p++)
+		d->passwordhash[p] = 0;
 	return status;
 }
 
@@ -755,6 +768,10 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 	if(!d)
 		return (*blkdev_write)(filp, user, size, loff);
 	
+	//If no password was given, we just use the regular write as normal
+	if(d->passwordhash[0] == '\0')
+		return (*blkdev_write)(filp, user, size, loff);
+
 	//Acquire data from buffer that we are going to write
 	buf = (char*) kmalloc(size, GFP_KERNEL);
 	if(buf == NULL)
@@ -768,13 +785,15 @@ ssize_t _osprd_encrypted_write (struct file * filp, const char * user, size_t si
 	}
 
 	//TODO: ENCRYPTION HERE
-	encrypt(buf
 	copystatus = copy_to_user(user, buf, size);
 	kfree(buf);
 	if(copystatus){
 		return -1;
 	}
-	//Write the data
+	//Write the data and zero out the password
+	int p = 0;
+	for(p = 0; p < SHA1_LENGTH; p++)
+		d->passwordhash[p] = 0;
 	return (*blkdev_write)(filp,user,size,loff);
 }
 
